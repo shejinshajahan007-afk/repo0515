@@ -1,95 +1,108 @@
-import streamlit as st
+import pickle
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.pipeline import Pipeline
+import streamlit as st
 
-st.set_page_config(
-    page_title="Customer Purchase Prediction",
-    page_icon="🛒",
-    layout="centered"
-)
+# Load Model
+with open("model.pkl", "rb") as f:
+    model = pickle.load(f)
 
-st.title("Customer Purchase Prediction App")
-st.write("Predict whether a customer will purchase a product.")
+# Load Scaler
+try:
+    with open("scaler.pkl", "rb") as f:
+        scaler = pickle.load(f)
+except:
+    scaler = None
 
-# Load dataset
-@st.cache_data
-def load_data():
-    return pd.read_csv("Streamli_task.csv")
 
-df = load_data()
+def preprocess_and_predict(features):
+    input_data = pd.DataFrame([features])
 
-# Display dataset
-st.subheader("Dataset Preview")
-st.dataframe(df)
+    required_columns = [
+        "Age",
+        "Gender",
+        "AnnualIncome",
+        "SpendingScore",
+        "MaritalStatus"
+    ]
 
-# Features and target
-X = df.drop("Purchased", axis=1)
-y = df["Purchased"]
+    input_data = input_data[required_columns]
 
-# Preprocessing
-preprocessor = ColumnTransformer(
-    transformers=[
-        (
-            "categorical",
-            OneHotEncoder(handle_unknown="ignore"),
-            ["Gender", "MaritalStatus"]
-        )
-    ],
-    remainder="passthrough"
-)
+    if scaler is not None:
+        input_data = scaler.transform(input_data)
 
-# Machine learning model
-model = Pipeline([
-    ("preprocessor", preprocessor),
-    ("classifier", RandomForestClassifier(
-        n_estimators=100,
-        random_state=42
-    ))
-])
+    prediction = model.predict(input_data)
+    probability = model.predict_proba(input_data)[:, 1]
 
-model.fit(X, y)
+    return prediction[0], probability[0]
 
-# User inputs
-st.subheader("Enter Customer Details")
+
+# Streamlit App
+
+st.title("Customer Purchase Prediction")
+
+st.write("Enter customer details to predict whether the customer will purchase.")
+
 
 age = st.number_input(
-    "Age", min_value=1, max_value=100, value=25
+    "Age",
+    min_value=18,
+    max_value=100,
+    value=30
 )
+
 
 gender = st.selectbox(
-    "Gender", ["Male", "Female"]
+    "Gender",
+    ["Male", "Female"]
 )
 
-income = st.number_input(
-    "Annual Income", min_value=0, value=35000
+
+annual_income = st.number_input(
+    "Annual Income",
+    min_value=0.0,
+    value=50000.0
 )
 
-score = st.slider(
-    "Spending Score", 0, 100, 50
+
+spending_score = st.number_input(
+    "Spending Score",
+    min_value=0.0,
+    max_value=100.0,
+    value=50.0
 )
+
 
 marital_status = st.selectbox(
-    "Marital Status", ["Single", "Married"]
+    "Marital Status",
+    ["Single", "Married"]
 )
 
-# Prediction
-if st.button("Predict Purchase"):
-    input_data = pd.DataFrame({
-        "Age": [age],
-        "Gender": [gender],
-        "AnnualIncome": [income],
-        "SpendingScore": [score],
-        "MaritalStatus": [marital_status]
-    })
 
-    prediction = model.predict(input_data)[0]
+# Encoding
+
+gender = 1 if gender == "Male" else 0
+
+marital_status = 1 if marital_status == "Single" else 0
+
+
+features = {
+    "Age": age,
+    "Gender": gender,
+    "AnnualIncome": annual_income,
+    "SpendingScore": spending_score,
+    "MaritalStatus": marital_status
+}
+
+
+if st.button("Predict"):
+
+    prediction, probability = preprocess_and_predict(features)
 
     if prediction == 1:
-        st.success("Prediction: Customer may purchase!")
+        st.success(
+            f"HIGH chance of purchase (Probability: {probability:.2f})"
+        )
     else:
-        st.warning("Prediction: Customer may not purchase.")
-
-st.info("Demo only: predictions use a very small dataset.")
+        st.error(
+            f"LOW chance of purchase (Probability: {probability:.2f})"
+        )
